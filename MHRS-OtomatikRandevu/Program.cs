@@ -27,29 +27,22 @@ namespace MHRS_OtomatikRandevu
             _notificationService = new NotificationService();
 
             #region Giriş Yap Bölümü
-            do
+            string jwtToken = null;
+            while (string.IsNullOrWhiteSpace(jwtToken))
             {
-                Console.Clear();
-                Console.WriteLine("MHRS Otomatik Randevu Sistemine Hoşgeldiniz.\nLütfen giriş yapmak için bilgilerinizi giriniz.");
+                Console.WriteLine("Lütfen MHRS JWT token'ınızı girin:");
+                jwtToken = Console.ReadLine()?.Trim();
+            }
+            JWT_TOKEN = jwtToken;
+            TOKEN_END_DATE = JwtTokenUtil.GetTokenExpireTime(JWT_TOKEN);
+            _client.AddOrUpdateAuthorizationHeader(jwtToken);
 
-                Console.Write("TC: ");
-                TC_NO = Console.ReadLine();
-
-                Console.Write("Şifre: ");
-                SIFRE = Console.ReadLine();
-
-                Console.WriteLine("Giriş Yapılıyor...");
-
-                var tokenData = GetToken(_client);
-                if (tokenData == null || string.IsNullOrEmpty(tokenData.Token))
-                    continue;
-
-                JWT_TOKEN = tokenData.Token;
-                TOKEN_END_DATE = tokenData.Expiration;
-
-                _client.AddOrUpdateAuthorizationHeader(JWT_TOKEN);
-
-            } while (string.IsNullOrEmpty(JWT_TOKEN));
+            // Token doğrulama için örnek bir istek atabilirsiniz:
+            if (!_client.ValidateToken())
+            {
+                Console.WriteLine("Token doğrulaması başarısız veya servis erişilemez. Devam etmek için token'ınızı doğrulayın.");
+                return;
+            }
             #endregion
 
             #region İl Seçim Bölümü
@@ -57,7 +50,8 @@ namespace MHRS_OtomatikRandevu
             var provinceListResponse = _client.GetSimple<List<GenericResponseModel>>(MHRSUrls.BaseUrl, MHRSUrls.GetProvinces);
             if (provinceListResponse == null || !provinceListResponse.Any())
             {
-                ConsoleUtil.WriteText("Bir hata meydana geldi!", 2000);
+                Console.WriteLine("Bir hata meydana geldi!");
+                Thread.Sleep(2000);
                 return;
             }
             var provinceList = provinceListResponse
@@ -344,7 +338,7 @@ namespace MHRS_OtomatikRandevu
                 if (TOKEN_END_DATE == default || TOKEN_END_DATE < DateTime.Now)
                 {
                     var tokenData = GetToken(_client);
-                    if (string.IsNullOrEmpty(tokenData.Token))
+                    if (tokenData == null || string.IsNullOrEmpty(tokenData.Token))
                     {
                         ConsoleUtil.WriteText("Yeniden giriş yapılırken bir hata meydana geldi!", 2000);
                         return;
@@ -369,7 +363,7 @@ namespace MHRS_OtomatikRandevu
                 if (slot == null || slot == default)
                 {
                     Console.WriteLine($"Müsait randevu bulunamadı | Kontrol Saati: {DateTime.Now.ToShortTimeString()}");
-                    Thread.Sleep(TimeSpan.FromMinutes(5));
+                    Thread.Sleep(TimeSpan.FromMinutes(1));
                     continue;
                 }
 
@@ -402,31 +396,37 @@ namespace MHRS_OtomatikRandevu
                     .FirstOrDefault();
                 tokenFilePath = Path.Combine(rawPath, TOKEN_FILE_NAME);
 
-                var tokenData = File.ReadAllText(tokenFilePath);
-                if (string.IsNullOrEmpty(tokenData) || JwtTokenUtil.GetTokenExpireTime(tokenData) < DateTime.Now)
-                    throw new Exception();
-
-                return new() { Token = tokenData, Expiration = JwtTokenUtil.GetTokenExpireTime(tokenData) };
-            }
-            catch (Exception)
-            {
-                var loginRequestModel = new LoginRequestModel
+                if (File.Exists(tokenFilePath))
                 {
-                    KullaniciAdi = TC_NO,
-                    Parola = SIFRE
-                };
+                    var tokenData = File.ReadAllText(tokenFilePath);
+                    if (!string.IsNullOrEmpty(tokenData) && JwtTokenUtil.GetTokenExpireTime(tokenData) > DateTime.Now)
+                        return new() { Token = tokenData, Expiration = JwtTokenUtil.GetTokenExpireTime(tokenData) };
+                }
 
-                var loginResponse = client.Post<LoginResponseModel>(MHRSUrls.BaseUrl, MHRSUrls.Login, loginRequestModel).Result;
-                if (loginResponse.Data == null || (loginResponse.Data != null && string.IsNullOrEmpty(loginResponse.Data?.Jwt)))
+                // Eğer token dosyası yoksa veya süresi dolduysa kullanıcıdan yeni token iste
+                Console.WriteLine("Lütfen yeni MHRS JWT token'ınızı girin:");
+                var newToken = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(newToken))
                 {
-                    ConsoleUtil.WriteText("Giriş yapılırken bir hata meydana geldi!", 2000);
+                    Console.WriteLine("Geçersiz token girdiniz.");
                     return null;
                 }
 
-                if (!string.IsNullOrEmpty(tokenFilePath))
-                    File.WriteAllText(tokenFilePath, loginResponse.Data!.Jwt);
+                // Dosya yolunu kullanabiliyorsak kaydet
+                try
+                {
+                    if (!string.IsNullOrEmpty(tokenFilePath))
+                        File.WriteAllText(tokenFilePath, newToken);
+                }
+                catch { }
 
-                return new() { Token = loginResponse.Data!.Jwt, Expiration = JwtTokenUtil.GetTokenExpireTime(loginResponse.Data!.Jwt) };
+                return new() { Token = newToken, Expiration = JwtTokenUtil.GetTokenExpireTime(newToken) };
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("Giriş yapılırken bir hata meydana geldi!");
+                Thread.Sleep(2000);
+                return null;
             }
         }
 

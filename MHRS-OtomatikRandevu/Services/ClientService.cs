@@ -50,8 +50,30 @@ namespace MHRS_OtomatikRandevu.Services
         {
             if (_client.DefaultRequestHeaders.Any(x => x.Key == "Authorization"))
                 _client.DefaultRequestHeaders.Remove("Authorization");
+            _client.DefaultRequestHeaders.Add("Authorization", $"Bearer {jwtToken}");
+        }
 
-            _client.DefaultRequestHeaders.AddAuthorization(jwtToken);
+        public bool ValidateToken()
+        {
+            try
+            {
+                var url = string.Concat(MHRS_OtomatikRandevu.Urls.MHRSUrls.BaseUrl, MHRS_OtomatikRandevu.Urls.MHRSUrls.GetProvinces);
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                if (_client.DefaultRequestHeaders.Authorization != null)
+                    request.Headers.Authorization = _client.DefaultRequestHeaders.Authorization;
+
+                var response = _client.Send(request);
+                return response.IsSuccessStatusCode;
+            }
+            catch (HttpRequestException)
+            {
+                // Network/DNS error or no connectivity — treat as invalid/unreachable
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

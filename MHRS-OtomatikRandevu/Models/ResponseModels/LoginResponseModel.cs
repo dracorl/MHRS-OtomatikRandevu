@@ -7,4 +7,5 @@ namespace MHRS_OtomatikRandevu.Models.ResponseModels
         [JsonPropertyName("jwt")]
         public string Jwt { get; set; }
     }
+    // Dosya artık kullanılmıyor. Giriş işlemleri JWT token ile yapılacak.
 }
